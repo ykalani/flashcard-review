@@ -71,6 +71,8 @@ p { color: var(--text2); line-height: 1.6; font-size: 0.9rem; }
 .btn-icon { width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 1.2rem; flex-shrink: 0; }
 .btn-delete { color: var(--wrong); border-color: rgba(var(--wrong-rgb), 0.3); }
 .btn-delete:active { background: rgba(var(--wrong-rgb), 0.1); }
+.btn-quiz { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); border: 1.5px solid rgba(var(--accent-rgb), 0.3); }
+.btn-quiz:active { background: rgba(var(--accent-rgb), 0.25); border-color: var(--accent); }
 
 .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 

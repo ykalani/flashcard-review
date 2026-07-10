@@ -5,6 +5,8 @@ const S = {
   sessionResults: [], inputMode: "text",
   previewCards: null, previewTitle: "",
   setId: null, pendingCard: null, userQuality: 0, judgeResult: null,
+  quizCards: [], quizIdx: 0, quizInput: "", quizJudgeResult: null,
+  quizResults: [], quizPendingCard: null, quizView: "question",
 };
 
 function $(s) { return document.querySelector(s); }
@@ -15,6 +17,7 @@ function render() {
   const views = {
     home: renderHome, create: renderCreate, set: renderSet,
     review: renderReview, results: renderResults, judge: renderJudge,
+    quiz: renderQuiz, "quiz-final": renderQuizFinal,
   };
   (views[S.view] || renderHome)(app);
 }
@@ -220,6 +223,7 @@ function renderSet(app) {
       <div class="stat-box"><div class="stat-val ${st.due > 0 ? "text-red" : "text-green"}">${st.due}</div><div class="stat-lbl">Due</div></div>
     </div>
     <button class="btn btn-primary btn-lg mb-16" onclick="startReview(${s.id})" ${st.due === 0 ? 'disabled' : ""}>Study (${st.due})</button>
+    <button class="btn btn-quiz btn-lg mb-16" onclick="startQuiz(${s.id})">Quiz (${st.total})</button>
     <button class="btn btn-ghost btn-sm btn-delete mb-16" onclick="deleteSet(${s.id})">Delete set</button>
     <h2 class="section-title">All Cards (${s.cards.length})</h2>
     <div class="card-list">${s.cards.map(c =>
@@ -391,6 +395,158 @@ async function acceptJudge(quality) {
 }
 
 function finishReview() { S.view = "results"; render(); }
+
+/* ---- QUIZ ---- */
+async function startQuiz(setId) {
+  S.setId = setId;
+  const res = await fetch(`${API}/api/sets/${setId}`);
+  const set = await res.json();
+  if (!set.cards || set.cards.length === 0) { alert("No cards in this set!"); return; }
+  S.quizCards = [...set.cards];
+  S.quizIdx = 0; S.quizInput = ""; S.quizJudgeResult = null;
+  S.quizResults = []; S.quizPendingCard = null; S.quizView = "question";
+  S.view = "quiz";
+  render();
+}
+
+function renderQuiz(app) {
+  if (S.quizIdx >= S.quizCards.length) { S.view = "quiz-final"; render(); return; }
+  const card = S.quizCards[S.quizIdx];
+  const total = S.quizCards.length;
+  const done = S.quizResults.length;
+
+  if (S.quizView === "judge") {
+    renderQuizJudge(app, card, total, done);
+    return;
+  }
+
+  app.innerHTML = `
+    <div class="nav-top">
+      <button class="btn btn-ghost btn-icon" onclick="loadSet(${S.setId})">&larr;</button>
+      <span class="nav-title">Quiz &middot; ${done + 1} / ${total}</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${(done/total)*100}%"></div></div>
+    <div class="flashcard">
+      <div>
+        <div class="flashcard-label">TERM</div>
+        <div class="flashcard-content">${esc(card.term)}</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type the definition</label>
+      <input id="quiz-input" class="review-input" type="text" placeholder="Your answer..."
+        onkeydown="if(event.key==='Enter')submitQuiz()" autocomplete="off">
+    </div>
+    <button class="btn btn-primary btn-lg" onclick="submitQuiz()">Submit</button>
+  `;
+  setTimeout(() => { const i = $("#quiz-input"); if (i) i.focus(); }, 150);
+}
+
+function renderQuizJudge(app, card, total, done) {
+  const jr = S.quizJudgeResult;
+  const llmOk = jr && !jr.error && jr.quality >= 2;
+
+  app.innerHTML = `
+    <div class="nav-top">
+      <button class="btn btn-ghost btn-icon" onclick="loadSet(${S.setId})">&larr;</button>
+      <span class="nav-title">Quiz &middot; ${done + 1} / ${total}</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${(done/total)*100}%"></div></div>
+
+    <div class="result-card ${llmOk === false ? "wrong" : ""}">
+      <div class="result-term">${esc(card.term)}</div>
+      <div class="result-def">${esc(card.definition)}</div>
+    </div>
+
+    <div class="judge-box">
+      <div class="judge-box-label">Your Answer</div>
+      <div class="judge-box-text">${esc(S.quizInput || "(blank)")}</div>
+    </div>
+
+    ${jr && !jr.error ? `
+      <div class="judge-verdict ${llmOk ? "ok" : "ko"}">
+        <div class="judge-verdict-label">LLM Verdict</div>
+        <div class="judge-verdict-outcome">${llmOk ? "&#10003; Correct" : "&#10007; Wrong"}</div>
+        <div class="judge-reasoning">${esc(jr.reasoning || "")}</div>
+      </div>
+      <button class="btn btn-primary btn-lg" onclick="nextQuizCard(${llmOk ? "true" : "false"})">
+        ${S.quizIdx + 1 >= S.quizCards.length ? "See Results" : "Continue"}
+      </button>
+    ` : jr && jr.error ? `
+      <div class="judge-verdict ko">
+        <div class="judge-verdict-label">Judge Unavailable</div>
+        <div class="judge-reasoning">${esc(jr.error)}</div>
+      </div>
+      <button class="btn btn-primary btn-lg" onclick="nextQuizCard(true)">Continue</button>
+    ` : `
+      <div style="text-align:center;padding:20px">
+        <div class="spinner"></div>
+        <p class="mt-8 text-muted">Judge is evaluating your answer&hellip;</p>
+      </div>
+    `}
+  `;
+}
+
+async function submitQuiz() {
+  const card = S.quizCards[S.quizIdx];
+  S.quizInput = $("#quiz-input")?.value || "";
+  S.quizPendingCard = card;
+  S.quizView = "judge";
+  S.quizJudgeResult = null;
+  render();
+
+  try {
+    const res = await fetch(`${API}/api/judge`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({term: card.term, definition: card.definition, answer: S.quizInput || "(blank)"})
+    });
+    S.quizJudgeResult = await res.json();
+  } catch {
+    S.quizJudgeResult = null;
+  }
+  render();
+}
+
+function nextQuizCard(correct) {
+  const card = S.quizCards[S.quizIdx];
+  const quality = correct ? 3 : 0;
+  S.quizResults.push({card_id: card.id, quality});
+
+  fetch(`${API}/api/sets/${S.setId}/review`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({card_id: card.id, quality})
+  });
+
+  if (!correct) {
+    S.quizCards.push(card);
+  }
+
+  S.quizIdx++; S.quizInput = ""; S.quizJudgeResult = null;
+  S.quizPendingCard = null; S.quizView = "question";
+  render();
+}
+
+function renderQuizFinal(app) {
+  const total = S.quizResults.length;
+  const correct = S.quizResults.filter(r => r.quality >= 2).length;
+  const wrong = total - correct;
+  const score = total > 0 ? Math.round((correct / total) * 100) : 0;
+
+  app.innerHTML = `
+    <div class="results-hero">
+      <div class="results-score ${score >= 80 ? "text-green" : score >= 50 ? "text-orange" : "text-red"}">${score}%</div>
+      <div class="results-sub">Quiz complete</div>
+    </div>
+    <div class="results-grid">
+      <div><div class="val text-green">${correct}</div><div class="lbl">Correct</div></div>
+      <div><div class="val text-red">${wrong}</div><div class="lbl">Wrong</div></div>
+    </div>
+    <div class="results-actions">
+      <button class="btn btn-primary btn-lg" onclick="startQuiz(${S.setId})">Quiz Again</button>
+      <button class="btn btn-ghost btn-lg" onclick="loadSet(${S.setId})">Back to Set</button>
+    </div>
+  `;
+}
 
 /* ---- RESULTS ---- */
 function renderResults(app) {
