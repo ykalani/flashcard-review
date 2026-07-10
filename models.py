@@ -64,6 +64,7 @@ def init_db():
             set_id INTEGER NOT NULL REFERENCES sets(id) ON DELETE CASCADE,
             term TEXT NOT NULL,
             definition TEXT NOT NULL,
+            card_type TEXT NOT NULL DEFAULT 'term',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS reviews (
@@ -85,6 +86,11 @@ def init_db():
         conn.commit()
     else:
         conn.executescript(sql)
+    try:
+        _exec(conn, "ALTER TABLE cards ADD COLUMN card_type TEXT NOT NULL DEFAULT 'term'")
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 def create_set(title, source=""):
@@ -119,7 +125,8 @@ def delete_set(set_id):
 def add_cards(set_id, cards):
     conn = get_db()
     for card in cards:
-        cur = _exec(conn, "INSERT INTO cards (set_id, term, definition) VALUES (?, ?, ?)", (set_id, card["term"], card["definition"]))
+        card_type = card.get("card_type", "term")
+        cur = _exec(conn, "INSERT INTO cards (set_id, term, definition, card_type) VALUES (?, ?, ?, ?)", (set_id, card["term"], card["definition"], card_type))
         card_id = _lastid(cur, conn)
         _exec(conn, "INSERT INTO reviews (card_id) VALUES (?)", (card_id,))
     _exec(conn, "UPDATE sets SET updated_at = datetime('now') WHERE id = ?", (set_id,))

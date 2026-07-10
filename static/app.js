@@ -7,6 +7,7 @@ const S = {
   setId: null, judgeResult: null,
   quizCards: [], quizIdx: 0, quizInput: "", quizJudgeResult: null,
   quizResults: [], quizPendingCard: null, quizView: "question",
+  swapped: false,
 };
 
 function $(s) { return document.querySelector(s); }
@@ -245,7 +246,7 @@ async function startReview(setId) {
   S.reviewCards = await res.json();
   if (S.reviewCards.length === 0) { alert("No cards due for review!"); return; }
   S.currentIdx = 0; S.showAnswer = false; S.userInput = ""; S.sessionResults = [];
-  S.view = "review";
+  S.swapped = false; S.view = "review";
   render();
 }
 
@@ -254,7 +255,6 @@ function renderReview(app) {
   const card = S.reviewCards[S.currentIdx];
   const total = S.reviewCards.length;
   const done = S.sessionResults.length;
-  const showTerm = S.currentIdx % 2 === 0;
 
   const correct = S.sessionResults.filter(r => r.quality >= 2).length;
   const wrong = S.sessionResults.filter(r => r.quality < 2).length;
@@ -269,36 +269,46 @@ function renderReview(app) {
       </div>
     </div>
     <div class="progress-bar"><div class="progress-fill" style="width:${(done/total)*100}%"></div></div>
-    ${S.showAnswer ? (S.judgeResult ? renderReviewResult(card) : renderReviewJudging(card)) : renderQuestion(card, showTerm)}
+    ${S.showAnswer ? (S.judgeResult ? renderReviewResult(card) : renderReviewJudging(card)) : renderQuestion(card)}
   `;
   if (!S.showAnswer) setTimeout(() => { const i = $("#answer-input"); if (i) i.focus(); }, 150);
 }
 
-function renderQuestion(card, showTerm) {
+function renderQuestion(card) {
+  const hintLabel = getHintLabel(card);
+  const hintContent = getHintContent(card);
+  const guessLabel = getGuessLabel(card);
+
   return `
     <div class="flashcard">
       <div>
-        <div class="flashcard-label">${showTerm ? "TERM" : "DEFINITION"}</div>
-        <div class="flashcard-content">${esc(showTerm ? card.term : card.definition)}</div>
+        <div class="flashcard-label">${hintLabel}</div>
+        <div class="flashcard-content">${esc(hintContent)}</div>
       </div>
     </div>
     <div class="form-group">
-      <label class="form-label">Type the ${showTerm ? "definition" : "term"}</label>
+      <label class="form-label">Type the ${guessLabel.toLowerCase()}</label>
       <input id="answer-input" class="review-input" type="text" placeholder="Your answer..."
         onkeydown="if(event.key==='Enter')revealAnswer()" autocomplete="off">
     </div>
     <button class="btn btn-ghost btn-lg" onclick="revealAnswer()">Show Answer</button>
+    <button class="btn btn-ghost btn-sm btn-swap" onclick="swapSides()">&#8644; Swap sides</button>
   `;
 }
 
 function renderReviewJudging(card) {
+  const hintLabel = getHintLabel(card);
+  const hintContent = getHintContent(card);
+  const guessLabel = getGuessLabel(card);
+  const guessContent = getGuessContent(card);
+
   return `
     <div class="result-card">
-      <div class="result-term">${esc(card.term)}</div>
-      <div class="result-def">${esc(card.definition)}</div>
+      <div class="result-term">${esc(hintContent)}</div>
+      <div class="result-def">${esc(guessContent)}</div>
     </div>
     <div class="judge-box">
-      <div class="judge-box-label">Your Answer</div>
+      <div class="judge-box-label">Your ${guessLabel}</div>
       <div class="judge-box-text">${esc(S.userInput || "(blank)")}</div>
     </div>
     <div style="text-align:center;padding:20px">
@@ -312,15 +322,18 @@ function renderReviewResult(card) {
   const jr = S.judgeResult;
   const llmOk = jr && !jr.error && jr.quality >= 2;
   const errorCase = jr && jr.error;
+  const hintContent = getHintContent(card);
+  const guessContent = getGuessContent(card);
+  const guessLabel = getGuessLabel(card);
 
   if (errorCase) {
     return `
       <div class="result-card">
-        <div class="result-term">${esc(card.term)}</div>
-        <div class="result-def">${esc(card.definition)}</div>
+        <div class="result-term">${esc(hintContent)}</div>
+        <div class="result-def">${esc(guessContent)}</div>
       </div>
       <div class="judge-box">
-        <div class="judge-box-label">Your Answer</div>
+        <div class="judge-box-label">Your ${guessLabel}</div>
         <div class="judge-box-text">${esc(S.userInput || "(blank)")}</div>
       </div>
       <div class="judge-verdict ko">
@@ -335,11 +348,11 @@ function renderReviewResult(card) {
 
   return `
     <div class="result-card ${llmOk ? "" : "wrong"}">
-      <div class="result-term">${esc(card.term)}</div>
-      <div class="result-def">${esc(card.definition)}</div>
+      <div class="result-term">${esc(hintContent)}</div>
+      <div class="result-def">${esc(guessContent)}</div>
     </div>
     <div class="judge-box">
-      <div class="judge-box-label">Your Answer</div>
+      <div class="judge-box-label">Your ${guessLabel}</div>
       <div class="judge-box-text">${esc(S.userInput || "(blank)")}</div>
     </div>
     <div class="judge-verdict ${llmOk ? "ok" : "ko"}">
@@ -362,9 +375,11 @@ function revealAnswer() {
   S.judgeResult = null;
   render();
   const card = S.reviewCards[S.currentIdx];
+  const shown = S.swapped ? card.definition : card.term;
+  const correct = S.swapped ? card.term : card.definition;
   fetch(`${API}/api/judge`, {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({term: card.term, definition: card.definition, answer: S.userInput || "(blank)"})
+    body: JSON.stringify({term: shown, definition: correct, answer: S.userInput || "(blank)"})
   })
     .then(r => r.json())
     .then(data => { S.judgeResult = data; render(); })
@@ -394,6 +409,7 @@ async function startQuiz(setId) {
   S.quizCards = [...set.cards];
   S.quizIdx = 0; S.quizInput = ""; S.quizJudgeResult = null;
   S.quizResults = []; S.quizPendingCard = null; S.quizView = "question";
+  S.swapped = false; S.view = "quiz";
   S.view = "quiz";
   render();
 }
@@ -409,6 +425,10 @@ function renderQuiz(app) {
     return;
   }
 
+  const hintLabel = getHintLabel(card);
+  const hintContent = getHintContent(card);
+  const guessLabel = getGuessLabel(card);
+
   app.innerHTML = `
     <div class="nav-top">
       <button class="btn btn-ghost btn-icon" onclick="loadSet(${S.setId})">&larr;</button>
@@ -417,16 +437,17 @@ function renderQuiz(app) {
     <div class="progress-bar"><div class="progress-fill" style="width:${(done/total)*100}%"></div></div>
     <div class="flashcard">
       <div>
-        <div class="flashcard-label">TERM</div>
-        <div class="flashcard-content">${esc(card.term)}</div>
+        <div class="flashcard-label">${hintLabel}</div>
+        <div class="flashcard-content">${esc(hintContent)}</div>
       </div>
     </div>
     <div class="form-group">
-      <label class="form-label">Type the definition</label>
+      <label class="form-label">Type the ${guessLabel.toLowerCase()}</label>
       <input id="quiz-input" class="review-input" type="text" placeholder="Your answer..."
         onkeydown="if(event.key==='Enter')submitQuiz()" autocomplete="off">
     </div>
     <button class="btn btn-primary btn-lg" onclick="submitQuiz()">Submit</button>
+    <button class="btn btn-ghost btn-sm btn-swap" onclick="swapQuizSides()">&#8644; Swap sides</button>
   `;
   setTimeout(() => { const i = $("#quiz-input"); if (i) i.focus(); }, 150);
 }
@@ -434,6 +455,9 @@ function renderQuiz(app) {
 function renderQuizJudge(app, card, total, done) {
   const jr = S.quizJudgeResult;
   const llmOk = jr && !jr.error && jr.quality >= 2;
+  const hintContent = getHintContent(card);
+  const guessContent = getGuessContent(card);
+  const guessLabel = getGuessLabel(card);
 
   app.innerHTML = `
     <div class="nav-top">
@@ -443,12 +467,12 @@ function renderQuizJudge(app, card, total, done) {
     <div class="progress-bar"><div class="progress-fill" style="width:${(done/total)*100}%"></div></div>
 
     <div class="result-card ${llmOk === false ? "wrong" : ""}">
-      <div class="result-term">${esc(card.term)}</div>
-      <div class="result-def">${esc(card.definition)}</div>
+      <div class="result-term">${esc(hintContent)}</div>
+      <div class="result-def">${esc(guessContent)}</div>
     </div>
 
     <div class="judge-box">
-      <div class="judge-box-label">Your Answer</div>
+      <div class="judge-box-label">Your ${guessLabel}</div>
       <div class="judge-box-text">${esc(S.quizInput || "(blank)")}</div>
     </div>
 
@@ -484,10 +508,12 @@ async function submitQuiz() {
   S.quizJudgeResult = null;
   render();
 
+  const shown = S.swapped ? card.definition : card.term;
+  const correct = S.swapped ? card.term : card.definition;
   try {
     const res = await fetch(`${API}/api/judge`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({term: card.term, definition: card.definition, answer: S.quizInput || "(blank)"})
+      body: JSON.stringify({term: shown, definition: correct, answer: S.quizInput || "(blank)"})
     });
     S.quizJudgeResult = await res.json();
   } catch {
@@ -514,6 +540,8 @@ function nextQuizCard(correct) {
   S.quizPendingCard = null; S.quizView = "question";
   render();
 }
+
+function swapQuizSides() { S.swapped = !S.swapped; render(); }
 
 function renderQuizFinal(app) {
   const total = S.quizResults.length;
@@ -567,5 +595,29 @@ function esc(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+function cardIsQa(card) { return (card.card_type || "term") === "question"; }
+
+function getHintLabel(card) {
+  const qa = cardIsQa(card);
+  if (S.swapped) return qa ? "ANSWER" : "DEFINITION";
+  return qa ? "QUESTION" : "TERM";
+}
+
+function getHintContent(card) {
+  return S.swapped ? card.definition : card.term;
+}
+
+function getGuessLabel(card) {
+  const qa = cardIsQa(card);
+  if (S.swapped) return qa ? "QUESTION" : "TERM";
+  return qa ? "ANSWER" : "DEFINITION";
+}
+
+function getGuessContent(card) {
+  return S.swapped ? card.term : card.definition;
+}
+
+function swapSides() { S.swapped = !S.swapped; render(); }
 
 loadHome();

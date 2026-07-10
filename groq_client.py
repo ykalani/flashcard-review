@@ -1,22 +1,29 @@
 import os
+import json
 import base64
-from groq import Groq
+from groq import Groq, RateLimitError
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
-VISION_MODEL = "llama-3.2-90b-vision-preview"
+GROQ_FALLBACK = "llama-3.3-70b-specdec"
+VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 SYSTEM_PROMPT = """You parse vocabulary or study material into flashcards.
-Return ONLY valid JSON — an array of objects with "term" and "definition" keys.
+Return ONLY valid JSON — an array of objects with "term", "definition", and "card_type" keys.
 Example:
 [
-  {"term": "Photosynthesis", "definition": "Process by which plants convert light into chemical energy"},
-  {"term": "Mitosis", "definition": "Cell division producing two identical daughter cells"}
+  {"term": "Photosynthesis", "definition": "Process by which plants convert light into chemical energy", "card_type": "term"},
+  {"term": "What is the powerhouse of the cell?", "definition": "Mitochondria", "card_type": "question"}
 ]
 
+card_type rules:
+- "term" for vocabulary definitions, key concepts, factual pairs (e.g. "DNA → genetic material")
+- "question" for Q&A pairs where the input is clearly a question and the answer is a response (e.g. "What causes seasons? → Earth's axial tilt")
+
 Rules:
-- If the input is a list of terms (one per line), create simple term->definition flashcards.
-- If the input has tab/comma-separated pairs, preserve them exactly.
-- If the input is a block of text, extract key concepts and their definitions.
+- If the input is a list of terms (one per line), create simple term->definition flashcards with card_type "term".
+- If the input has tab/comma-separated pairs, preserve them exactly and determine the card_type from context.
+- If the input is a block of text, extract key concepts and their definitions with card_type "term".
+- If the input contains questions (sentences ending with ?), use card_type "question" and put the question in "term" and the answer in "definition".
 - Make definitions concise but complete — 1-2 sentences max.
 - Output ONLY the JSON array, no markdown, no commentary."""
 
@@ -35,7 +42,6 @@ def parse_vocab(text, api_key=None):
         temperature=0.1,
         response_format={"type": "json_object"},
     )
-    import json
     raw = resp.choices[0].message.content
     data = json.loads(raw)
     if isinstance(data, dict):
@@ -72,18 +78,24 @@ def judge_answer(term, definition, answer, api_key=None):
     if not key:
         raise ValueError("GROQ_API_KEY not set")
     client = Groq(api_key=key)
-    resp = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": "You are a fair flashcard grader. Return only JSON."},
-            {"role": "user", "content": JUDGE_PROMPT.format(term=term, definition=definition, answer=answer)},
-        ],
-        temperature=0.1,
-        response_format={"type": "json_object"},
-    )
-    import json
-    raw = resp.choices[0].message.content
-    return json.loads(raw)
+    models = [GROQ_MODEL, GROQ_FALLBACK]
+    for i, model in enumerate(models):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are a fair flashcard grader. Return only JSON."},
+                    {"role": "user", "content": JUDGE_PROMPT.format(term=term, definition=definition, answer=answer)},
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"},
+            )
+            raw = resp.choices[0].message.content
+            return json.loads(raw)
+        except RateLimitError:
+            if i < len(models) - 1:
+                continue
+            raise
 
 def parse_image(image_bytes, api_key=None):
     key = api_key or os.environ.get("GROQ_API_KEY", "")
@@ -103,8 +115,9 @@ def parse_image(image_bytes, api_key=None):
                     {
                         "type": "text",
                         "text": "This image contains a vocabulary list or study material. "
-                                "Extract every term-definition pair and return them as a JSON array "
-                                'of objects with "term" and "definition" keys. '
+                                "Extract every term-definition or question-answer pair and return them as a JSON array "
+                                'of objects with "term", "definition", and "card_type" keys. '
+                                'Use card_type "term" for vocabulary/factual pairs and "question" for Q&A pairs. '
                                 "If the material uses tables, lists, or paragraphs, "
                                 "identify each distinct concept and its explanation. "
                                 "Be thorough — capture ALL terms visible in the image. "
@@ -120,7 +133,6 @@ def parse_image(image_bytes, api_key=None):
         temperature=0.1,
         response_format={"type": "json_object"},
     )
-    import json
     raw = resp.choices[0].message.content
     data = json.loads(raw)
     if isinstance(data, dict):
