@@ -56,3 +56,24 @@ Quality → interval: 0=1min, 1=10min, 2=×ef, 3=×ef×1.3; ef floors at 1.3.
 
 - Model: `llama-3.3-70b-versatile` (text), `llama-3.2-90b-vision-preview` (vision)
 - Set `GROQ_API_KEY` in `.env` (local) or Vercel env vars (production)
+
+## Secrets & Credentials
+
+| Secret | Where |
+|---|---|
+| `GROQ_API_KEY` | `.env` (local), Vercel env (production) |
+| Vercel token | OS keychain (`gho_*`), user `ykalani` |
+
+## Skills Used
+
+- `impeccable` — mobile-first UI, dark theme, touch targets, responsive layout
+- `customize-opencode` — opencode agent/plugin config (Vercel MCP)
+
+## Next Steps (apply without asking)
+
+- Add persistent DB (Supabase/Neon) instead of ephemeral SQLite on Vercel
+- Add Gemini as alternative AI parser (`gemini-client.py`)
+- Add Gemini vision as fallback for image parsing
+- Set up GitHub Actions for auto-deploy on push
+- Add user auth (Google OAuth) for multi-user
+- Batch import from CSV/PDF
