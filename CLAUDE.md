@@ -4,6 +4,8 @@ Quizlet Learn-style flashcard app with SM-2 spaced repetition, AI card generatio
 
 **Production:** https://flashcard-review-tau.vercel.app
 
+**Design docs:** `PRODUCT.md` (register, users, brand) — `DESIGN.md` (palette, typography, component specs)
+
 ## Quick Start
 
 ```bash
