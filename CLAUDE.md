@@ -86,6 +86,12 @@ Quality → interval: 0=1min, 1=10min, 2=×ef, 3=×ef×1.3; ef floors at 1.3.
 | `GROQ_API_KEY` | `.env` (local), Vercel env (production) |
 | Vercel token | OS keychain (`gho_*`), user `ykalani` |
 
+## Commit Policy
+
+- Commit and push after each logical unit of work without asking
+- Group commits by domain: doc files (.md) → one commit, CSS changes → one commit, everything else → one commit
+- Do not lump unrelated files into a single commit
+
 ## Skills Used
 
 - `impeccable` — mobile-first UI, dark theme, touch targets, responsive layout
