@@ -256,10 +256,17 @@ function renderReview(app) {
   const done = S.sessionResults.length;
   const showTerm = S.currentIdx % 2 === 0;
 
+  const correct = S.sessionResults.filter(r => r.quality >= 2).length;
+  const wrong = S.sessionResults.filter(r => r.quality < 2).length;
+
   app.innerHTML = `
     <div class="nav-top">
       <button class="btn btn-ghost btn-icon" onclick="loadSet(${S.setId})">&larr;</button>
-      <span class="nav-title">${done + 1} / ${total}</span>
+      <div class="nav-center">
+        <div class="score-pill pill-green">${correct}</div>
+        <span class="nav-title">${done + 1} / ${total}</span>
+        <div class="score-pill pill-red">${wrong}</div>
+      </div>
     </div>
     <div class="progress-bar"><div class="progress-fill" style="width:${(done/total)*100}%"></div></div>
     ${S.showAnswer ? (S.judgeResult ? renderReviewResult(card) : renderReviewJudging(card)) : renderQuestion(card, showTerm)}
