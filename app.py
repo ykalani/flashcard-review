@@ -9,7 +9,7 @@ if os.environ.get("DATABASE_URL"):
 
 from flask import Flask, request, jsonify, render_template
 from models import init_db, create_set, get_sets, get_set, delete_set, add_cards, get_cards, get_due_cards, record_review, get_stats
-from groq_client import parse_vocab_groq, parse_image, judge_answer
+from groq_client import parse_vocab as parse_vocab_groq, parse_image, judge_answer
 from dspy_parser import parse_vocab_dspy, parse_vocab_dspy_optimized
 
 app = Flask(__name__)

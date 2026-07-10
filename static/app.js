@@ -345,7 +345,7 @@ async function rate(quality) {
 function renderJudge(app) {
   const card = state.pendingCard;
   const jr = state.judgeResult;
-  const qLabels = ["Forgot", "Hard", "Good", "Easy"];
+  const llmCorrect = jr && !jr.error && jr.quality >= 2;
 
   app.innerHTML = `
     <nav class="nav-top">
@@ -363,31 +363,27 @@ function renderJudge(app) {
       <div>${esc(state.userInput || "(blank)")}</div>
     </div>
 
-    <div style="margin-bottom:16px;padding:12px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">
-      <div style="font-size:0.75rem;color:var(--text2);margin-bottom:4px;font-weight:600">YOUR SELF-RATING</div>
-      <div style="font-size:1.2rem;font-weight:700;color:${["#ef4444","#f97316","#22c55e","#3b82f6"][state.userQuality]}">${qLabels[state.userQuality]} (${state.userQuality})</div>
-    </div>
-
     ${jr && !jr.error ? `
-      <div class="judge-verdict" style="margin-bottom:16px;padding:16px;background:var(--surface);border-radius:var(--radius);border:2px solid ${["#ef4444","#f97316","#22c55e","#3b82f6"][jr.quality]}">
-        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px;font-weight:600">LLM JUDGE</div>
-        <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;color:${["#ef4444","#f97316","#22c55e","#3b82f6"][jr.quality]}">
-          ${qLabels[jr.quality]} (${jr.quality})
+      <div class="judge-verdict" style="margin-bottom:16px;padding:16px;background:var(--surface);border-radius:var(--radius);border:2px solid ${llmCorrect ? "var(--correct)" : "var(--wrong)"}">
+        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px;font-weight:600">LLM VERDICT</div>
+        <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;color:${llmCorrect ? "var(--correct)" : "var(--wrong)"}">
+          ${llmCorrect ? "&#10003; Correct" : "&#10007; Wrong"}
         </div>
         <div style="color:var(--text2);font-size:0.9rem;line-height:1.5">${esc(jr.reasoning || "")}</div>
       </div>
 
-      <p style="text-align:center;color:var(--text2);margin-bottom:12px;font-size:0.85rem">Accept the LLM's rating or keep your own?</p>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-primary btn-lg" onclick="acceptJudge(${jr.quality})">Accept LLM: ${qLabels[jr.quality]} (${jr.quality})</button>
-        <button class="btn btn-ghost btn-lg" onclick="acceptJudge(${state.userQuality})">Keep My Rating: ${qLabels[state.userQuality]} (${state.userQuality})</button>
+        <button class="btn btn-primary btn-lg" onclick="acceptJudge(${jr.quality})">Continue (${llmCorrect ? "Correct" : "Wrong"})</button>
+        <button class="btn btn-ghost btn-lg" onclick="acceptJudge(${llmCorrect ? 0 : 3})" style="border-color:${llmCorrect ? "var(--wrong)" : "var(--correct)"};color:${llmCorrect ? "var(--wrong)" : "var(--correct)"}">
+          Mark as ${llmCorrect ? "Wrong" : "Correct"}
+        </button>
       </div>
     ` : jr && jr.error ? `
       <div class="judge-verdict" style="margin-bottom:16px;padding:16px;background:var(--surface);border-radius:var(--radius);border:2px solid var(--wrong)">
-        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px;font-weight:600">LLM JUDGE</div>
-        <div style="color:var(--wrong);font-size:0.9rem">Judge unavailable: ${esc(jr.error)}</div>
+        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px;font-weight:600">JUDGE UNAVAILABLE</div>
+        <div style="color:var(--wrong);font-size:0.9rem">${esc(jr.error)}</div>
       </div>
-      <button class="btn btn-primary btn-lg" onclick="acceptJudge(${state.userQuality})">Continue with My Rating (${qLabels[state.userQuality]})</button>
+      <button class="btn btn-primary btn-lg" onclick="acceptJudge(${state.userQuality})">Continue with My Rating</button>
     ` : `
       <div style="text-align:center;padding:20px">
         <div class="spinner"></div>
