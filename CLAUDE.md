@@ -45,7 +45,18 @@ vercel --prod --yes
 # Vercel env needs: GROQ_API_KEY (set via `vercel env add`)
 ```
 
-Vercel quirks: SQLite lives in `/tmp` (ephemeral — set `DATABASE_URL` for persistent Postgres), env vars may get trailing newlines (stripped in `app.py`), cold starts ~5s.
+## Persistent Storage
+
+Currently data is ephemeral on Vercel (SQLite in `/tmp`). To make data persist:
+
+1. Go to [neon.tech](https://neon.tech) — sign up free (no card)
+2. Create a project, copy the connection string
+3. Run: `vercel env add DATABASE_URL production` and paste it
+4. Redeploy: `vercel --prod --yes`
+
+The app auto-detects `DATABASE_URL` and switches from SQLite to PostgreSQL. No code changes needed.
+
+Vercel quirks: env vars may get trailing newlines (stripped in `app.py`), cold starts ~5s.
 
 ## API
 
