@@ -29,6 +29,15 @@ py app.py
 | `static/style.css` | Dark theme, responsive |
 | `templates/index.html` | SPA shell |
 
+## LLM Judge
+
+After the user rates themselves, an LLM (`llama-3.3-70b-versatile`) independently evaluates their written answer against the correct definition. The judge returns a quality score (0-3) with reasoning. The user can accept the LLM's rating or override with their own.
+
+- `POST /api/judge` — `{term, definition, answer}` → `{quality, reasoning}`
+- Judge prompt: `groq_client.py:JUDGE_PROMPT` — step-by-step reasoning, strict criteria per quality level
+- Frontend: `app.js:renderJudge()` — shows judge verdict, accept/override buttons
+- LLM rating does NOT auto-override the user — user always has final say
+
 ## Deploy
 
 ```bash
@@ -36,7 +45,7 @@ vercel --prod --yes
 # Vercel env needs: GROQ_API_KEY (set via `vercel env add`)
 ```
 
-Vercel quirks: SQLite lives in `/tmp` (ephemeral), env vars may get trailing newlines (stripped in `app.py`), cold starts ~5s.
+Vercel quirks: SQLite lives in `/tmp` (ephemeral — set `DATABASE_URL` for persistent Postgres), env vars may get trailing newlines (stripped in `app.py`), cold starts ~5s.
 
 ## API
 

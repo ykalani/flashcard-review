@@ -12,6 +12,7 @@ function render() {
     case "set": renderSet(app); break;
     case "review": renderReview(app); break;
     case "results": renderResults(app); break;
+    case "judge": renderJudge(app); break;
   }
 }
 
@@ -322,6 +323,82 @@ function revealAnswer() {
 
 async function rate(quality) {
   const card = state.reviewCards[state.currentIdx];
+  state.pendingCard = card;
+  state.userQuality = quality;
+
+  state.view = "judge";
+  render();
+
+  const input = state.userInput || "";
+  try {
+    const res = await fetch(`${API}/api/judge`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({term: card.term, definition: card.definition, answer: input || "(blank)"})
+    });
+    state.judgeResult = await res.json();
+  } catch {
+    state.judgeResult = null;
+  }
+  render();
+}
+
+function renderJudge(app) {
+  const card = state.pendingCard;
+  const jr = state.judgeResult;
+  const qLabels = ["Forgot", "Hard", "Good", "Easy"];
+
+  app.innerHTML = `
+    <nav class="nav-top">
+      <button class="btn btn-ghost btn-icon" onclick="loadSet(${state.setId})">&larr;</button>
+      <div style="flex:1;text-align:center;font-size:0.85rem;color:var(--text2)">LLM Judge</div>
+    </nav>
+
+    <div class="result-box correct">
+      <div class="term">${esc(card.term)}</div>
+      <div class="def">${esc(card.definition)}</div>
+    </div>
+
+    <div style="margin-bottom:16px;padding:12px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">
+      <div style="font-size:0.75rem;color:var(--text2);margin-bottom:4px;font-weight:600">YOUR ANSWER</div>
+      <div>${esc(state.userInput || "(blank)")}</div>
+    </div>
+
+    <div style="margin-bottom:16px;padding:12px;background:var(--surface);border-radius:var(--radius);border:1px solid var(--border)">
+      <div style="font-size:0.75rem;color:var(--text2);margin-bottom:4px;font-weight:600">YOUR SELF-RATING</div>
+      <div style="font-size:1.2rem;font-weight:700;color:${["#ef4444","#f97316","#22c55e","#3b82f6"][state.userQuality]}">${qLabels[state.userQuality]} (${state.userQuality})</div>
+    </div>
+
+    ${jr && !jr.error ? `
+      <div class="judge-verdict" style="margin-bottom:16px;padding:16px;background:var(--surface);border-radius:var(--radius);border:2px solid ${["#ef4444","#f97316","#22c55e","#3b82f6"][jr.quality]}">
+        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px;font-weight:600">LLM JUDGE</div>
+        <div style="font-size:1.2rem;font-weight:700;margin-bottom:8px;color:${["#ef4444","#f97316","#22c55e","#3b82f6"][jr.quality]}">
+          ${qLabels[jr.quality]} (${jr.quality})
+        </div>
+        <div style="color:var(--text2);font-size:0.9rem;line-height:1.5">${esc(jr.reasoning || "")}</div>
+      </div>
+
+      <p style="text-align:center;color:var(--text2);margin-bottom:12px;font-size:0.85rem">Accept the LLM's rating or keep your own?</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-primary btn-lg" onclick="acceptJudge(${jr.quality})">Accept LLM: ${qLabels[jr.quality]} (${jr.quality})</button>
+        <button class="btn btn-ghost btn-lg" onclick="acceptJudge(${state.userQuality})">Keep My Rating: ${qLabels[state.userQuality]} (${state.userQuality})</button>
+      </div>
+    ` : jr && jr.error ? `
+      <div class="judge-verdict" style="margin-bottom:16px;padding:16px;background:var(--surface);border-radius:var(--radius);border:2px solid var(--wrong)">
+        <div style="font-size:0.75rem;color:var(--text2);margin-bottom:6px;font-weight:600">LLM JUDGE</div>
+        <div style="color:var(--wrong);font-size:0.9rem">Judge unavailable: ${esc(jr.error)}</div>
+      </div>
+      <button class="btn btn-primary btn-lg" onclick="acceptJudge(${state.userQuality})">Continue with My Rating (${qLabels[state.userQuality]})</button>
+    ` : `
+      <div style="text-align:center;padding:20px">
+        <div class="spinner"></div>
+        <p style="margin-top:12px;color:var(--text2)">LLM is judging your answer...</p>
+      </div>
+    `}
+  `;
+}
+
+async function acceptJudge(quality) {
+  const card = state.pendingCard;
   state.sessionResults.push({card_id: card.id, quality});
   await fetch(`${API}/api/sets/${state.setId}/review`, {
     method: "POST", headers: {"Content-Type": "application/json"},
@@ -329,6 +406,7 @@ async function rate(quality) {
   });
   if (quality === 0) state.reviewCards.splice(state.currentIdx, 0, card);
   state.currentIdx++; state.showAnswer = false; state.userInput = "";
+  state.view = "review";
   render();
 }
 

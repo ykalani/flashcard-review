@@ -4,10 +4,12 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
 if os.environ.get("GROQ_API_KEY"):
     os.environ["GROQ_API_KEY"] = os.environ["GROQ_API_KEY"].strip()
+if os.environ.get("DATABASE_URL"):
+    os.environ["DATABASE_URL"] = os.environ["DATABASE_URL"].strip()
 
 from flask import Flask, request, jsonify, render_template
 from models import init_db, create_set, get_sets, get_set, delete_set, add_cards, get_cards, get_due_cards, record_review, get_stats
-from groq_client import parse_vocab as parse_vocab_groq, parse_image
+from groq_client import parse_vocab_groq, parse_image, judge_answer
 from dspy_parser import parse_vocab_dspy, parse_vocab_dspy_optimized
 
 app = Flask(__name__)
@@ -71,6 +73,20 @@ def parse():
         else:
             cards = parse_vocab_groq(text)
         return jsonify({"cards": cards, "method": method})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/judge", methods=["POST"])
+def judge():
+    data = request.get_json()
+    term = data.get("term", "")
+    definition = data.get("definition", "")
+    answer = data.get("answer", "")
+    if not term or not definition:
+        return jsonify({"error": "term and definition required"}), 400
+    try:
+        result = judge_answer(term, definition, answer)
+        return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
