@@ -1,0 +1,6 @@
+flashcards.db
+*.pyc
+__pycache__/
+.env
+
+.vercel
