@@ -4,7 +4,7 @@ const S = {
   reviewCards: [], currentIdx: 0, showAnswer: false, userInput: "",
   sessionResults: [], inputMode: "text",
   previewCards: null, previewTitle: "",
-  setId: null, pendingCard: null, userQuality: 0, judgeResult: null,
+  setId: null, judgeResult: null,
   quizCards: [], quizIdx: 0, quizInput: "", quizJudgeResult: null,
   quizResults: [], quizPendingCard: null, quizView: "question",
 };
@@ -16,7 +16,7 @@ function render() {
   app.innerHTML = "";
   const views = {
     home: renderHome, create: renderCreate, set: renderSet,
-    review: renderReview, results: renderResults, judge: renderJudge,
+    review: renderReview, results: renderResults,
     quiz: renderQuiz, "quiz-final": renderQuizFinal,
   };
   (views[S.view] || renderHome)(app);
@@ -262,7 +262,7 @@ function renderReview(app) {
       <span class="nav-title">${done + 1} / ${total}</span>
     </div>
     <div class="progress-bar"><div class="progress-fill" style="width:${(done/total)*100}%"></div></div>
-    ${S.showAnswer ? renderAnswer(card) : renderQuestion(card, showTerm)}
+    ${S.showAnswer ? (S.judgeResult ? renderReviewResult(card) : renderReviewJudging(card)) : renderQuestion(card, showTerm)}
   `;
   if (!S.showAnswer) setTimeout(() => { const i = $("#answer-input"); if (i) i.focus(); }, 150);
 }
@@ -284,26 +284,67 @@ function renderQuestion(card, showTerm) {
   `;
 }
 
-function renderAnswer(card) {
-  const input = S.userInput || $("#answer-input")?.value || "";
-  const expected = [card.term.toLowerCase().trim(), card.definition.toLowerCase().trim()];
-  const got = input.toLowerCase().trim();
-  const correct = expected.some(e => got === e) || expected.some(e => got.includes(e)) || got.includes(expected[0]) || got.includes(expected[1]);
-
+function renderReviewJudging(card) {
   return `
-    <div class="result-card ${correct ? "" : "wrong"}">
+    <div class="result-card">
       <div class="result-term">${esc(card.term)}</div>
       <div class="result-def">${esc(card.definition)}</div>
-      <div class="result-verdict ${correct ? "ok" : "ko"}">
-        ${correct ? "&#10003; Correct" : "&#10007; You typed: " + esc(input)}
-      </div>
     </div>
-    <p class="nav-title mb-16">How well did you know it?</p>
-    <div class="quality-grid">
-      <button class="quality-btn" data-quality="0" onclick="rate(0)">Forgot</button>
-      <button class="quality-btn" data-quality="1" onclick="rate(1)">Hard</button>
-      <button class="quality-btn" data-quality="2" onclick="rate(2)">Good</button>
-      <button class="quality-btn" data-quality="3" onclick="rate(3)">Easy</button>
+    <div class="judge-box">
+      <div class="judge-box-label">Your Answer</div>
+      <div class="judge-box-text">${esc(S.userInput || "(blank)")}</div>
+    </div>
+    <div style="text-align:center;padding:20px">
+      <div class="spinner"></div>
+      <p class="mt-8 text-muted">Judge is evaluating&hellip;</p>
+    </div>
+  `;
+}
+
+function renderReviewResult(card) {
+  const jr = S.judgeResult;
+  const llmOk = jr && !jr.error && jr.quality >= 2;
+  const errorCase = jr && jr.error;
+
+  if (errorCase) {
+    return `
+      <div class="result-card">
+        <div class="result-term">${esc(card.term)}</div>
+        <div class="result-def">${esc(card.definition)}</div>
+      </div>
+      <div class="judge-box">
+        <div class="judge-box-label">Your Answer</div>
+        <div class="judge-box-text">${esc(S.userInput || "(blank)")}</div>
+      </div>
+      <div class="judge-verdict ko">
+        <div class="judge-verdict-label">Judge Unavailable</div>
+        <div class="judge-reasoning">${esc(jr.error)}</div>
+      </div>
+      <div class="review-actions">
+        <button class="btn btn-primary btn-lg" onclick="acceptReview(3)">Next</button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="result-card ${llmOk ? "" : "wrong"}">
+      <div class="result-term">${esc(card.term)}</div>
+      <div class="result-def">${esc(card.definition)}</div>
+    </div>
+    <div class="judge-box">
+      <div class="judge-box-label">Your Answer</div>
+      <div class="judge-box-text">${esc(S.userInput || "(blank)")}</div>
+    </div>
+    <div class="judge-verdict ${llmOk ? "ok" : "ko"}">
+      <div class="judge-verdict-label">LLM Verdict</div>
+      <div class="judge-verdict-outcome">${llmOk ? "&#10003; Correct" : "&#10007; Wrong"}</div>
+      <div class="judge-reasoning">${esc(jr.reasoning || "")}</div>
+    </div>
+    <div class="review-actions">
+      <button class="btn btn-primary btn-lg" onclick="acceptReview(${llmOk ? 3 : 0})">Next</button>
+      <button class="btn btn-ghost-accent btn-lg" onclick="acceptReview(${llmOk ? 0 : 3})">
+        Mark ${llmOk ? "Wrong" : "Correct"}
+      </button>
     </div>
   `;
 }
@@ -311,86 +352,27 @@ function renderAnswer(card) {
 function revealAnswer() {
   S.userInput = $("#answer-input")?.value || "";
   S.showAnswer = true;
+  S.judgeResult = null;
   render();
-}
-
-async function rate(quality) {
   const card = S.reviewCards[S.currentIdx];
-  S.pendingCard = card;
-  S.userQuality = quality;
-  S.view = "judge";
-  render();
-  const input = S.userInput || "";
-  try {
-    const res = await fetch(`${API}/api/judge`, {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({term: card.term, definition: card.definition, answer: input || "(blank)"})
-    });
-    S.judgeResult = await res.json();
-  } catch {
-    S.judgeResult = null;
-  }
-  render();
+  fetch(`${API}/api/judge`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({term: card.term, definition: card.definition, answer: S.userInput || "(blank)"})
+  })
+    .then(r => r.json())
+    .then(data => { S.judgeResult = data; render(); })
+    .catch(() => { S.judgeResult = {error: "Failed to reach judge"}; render(); });
 }
 
-function renderJudge(app) {
-  const card = S.pendingCard;
-  const jr = S.judgeResult;
-  const llmOk = jr && !jr.error && jr.quality >= 2;
-
-  app.innerHTML = `
-    <div class="nav-top">
-      <button class="btn btn-ghost btn-icon" onclick="loadSet(${S.setId})">&larr;</button>
-      <span class="nav-title">LLM Judge</span>
-    </div>
-
-    <div class="result-card">
-      <div class="result-term">${esc(card.term)}</div>
-      <div class="result-def">${esc(card.definition)}</div>
-    </div>
-
-    <div class="judge-box">
-      <div class="judge-box-label">Your Answer</div>
-      <div class="judge-box-text">${esc(S.userInput || "(blank)")}</div>
-    </div>
-
-    ${jr && !jr.error ? `
-      <div class="judge-verdict ${llmOk ? "ok" : "ko"}">
-        <div class="judge-verdict-label">LLM Verdict</div>
-        <div class="judge-verdict-outcome">${llmOk ? "&#10003; Correct" : "&#10007; Wrong"}</div>
-        <div class="judge-reasoning">${esc(jr.reasoning || "")}</div>
-      </div>
-      <div class="judge-actions">
-        <button class="btn btn-primary btn-lg" onclick="acceptJudge(${jr.quality})">Continue as ${llmOk ? "Correct" : "Wrong"}</button>
-        <button class="btn btn-ghost-accent btn-lg" onclick="acceptJudge(${llmOk ? 0 : 3})">
-          Override &mdash; Mark ${llmOk ? "Wrong" : "Correct"}
-        </button>
-      </div>
-    ` : jr && jr.error ? `
-      <div class="judge-verdict ko">
-        <div class="judge-verdict-label">Judge Unavailable</div>
-        <div class="judge-reasoning">${esc(jr.error)}</div>
-      </div>
-      <button class="btn btn-primary btn-lg" onclick="acceptJudge(${S.userQuality})">Continue with My Rating</button>
-    ` : `
-      <div style="text-align:center;padding:20px">
-        <div class="spinner"></div>
-        <p class="mt-8 text-muted">Judge is evaluating your answer&hellip;</p>
-      </div>
-    `}
-  `;
-}
-
-async function acceptJudge(quality) {
-  const card = S.pendingCard;
+async function acceptReview(quality) {
+  const card = S.reviewCards[S.currentIdx];
   S.sessionResults.push({card_id: card.id, quality});
   await fetch(`${API}/api/sets/${S.setId}/review`, {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({card_id: card.id, quality})
   });
   if (quality === 0) S.reviewCards.splice(S.currentIdx, 0, card);
-  S.currentIdx++; S.showAnswer = false; S.userInput = "";
-  S.view = "review";
+  S.currentIdx++; S.showAnswer = false; S.userInput = ""; S.judgeResult = null;
   render();
 }
 
