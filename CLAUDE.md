@@ -88,7 +88,8 @@ Quality → interval: 0=1min, 1=10min, 2=×ef, 3=×ef×1.3; ef floors at 1.3.
 
 ## Commit Policy
 
-- Commit and push after each logical unit of work without asking
+This overrides the default no-commit behavior. Always follow these rules without asking permission:
+- Commit and push after each logical unit of work
 - Group commits by domain: doc files (.md) → one commit, CSS changes → one commit, everything else → one commit
 - Do not lump unrelated files into a single commit
 
