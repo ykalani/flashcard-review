@@ -1,6 +1,7 @@
 {
+  "basePath": "/flashcards",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+    { "source": "/flashcards/(.*)", "destination": "/api/index" }
   ],
   "cleanUrls": true
 }
