@@ -1,5 +1,4 @@
 {
-  "basePath": "/flashcards",
   "rewrites": [
     { "source": "/flashcards/(.*)", "destination": "/api/index" }
   ],

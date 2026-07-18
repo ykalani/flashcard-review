@@ -1,4 +1,7 @@
 import os
+import time
+from collections import defaultdict
+from functools import wraps
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env")
@@ -13,6 +16,51 @@ from groq_client import parse_vocab as parse_vocab_groq, parse_image, judge_answ
 from dspy_parser import parse_vocab_dspy, parse_vocab_dspy_optimized
 
 app = Flask(__name__)
+
+_rate_limits = defaultdict(lambda: defaultdict(list))
+
+RATE_LIMITS = {
+    "parse":       {"max": 15,  "window": 3600},
+    "parse-image": {"max": 5,   "window": 3600},
+    "total":       {"max": 200, "window": 86400},
+}
+
+def get_client_ip():
+    return request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+
+def rate_limit(endpoint_group):
+    lim = RATE_LIMITS.get(endpoint_group)
+    if not lim:
+        return lambda f: f
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            ip = get_client_ip()
+            now = time.time()
+            total_lim = RATE_LIMITS["total"]
+            total_cutoff = now - total_lim["window"]
+            _rate_limits[ip]["total"] = [t for t in _rate_limits[ip]["total"] if t > total_cutoff]
+            if len(_rate_limits[ip]["total"]) >= total_lim["max"]:
+                retry_after = int(total_lim["window"] - (now - _rate_limits[ip]["total"][0]))
+                return jsonify({
+                    "error": "rate_limit_exceeded",
+                    "message": f"Daily limit reached. Try again in {retry_after}s.",
+                    "retry_after": retry_after
+                }), 429
+            cutoff = now - lim["window"]
+            _rate_limits[ip][endpoint_group] = [t for t in _rate_limits[ip][endpoint_group] if t > cutoff]
+            if len(_rate_limits[ip][endpoint_group]) >= lim["max"]:
+                retry_after = int(lim["window"] - (now - _rate_limits[ip][endpoint_group][0]))
+                return jsonify({
+                    "error": "rate_limit_exceeded",
+                    "message": f"Too many requests. Try again in {retry_after}s.",
+                    "retry_after": retry_after
+                }), 429
+            _rate_limits[ip]["total"].append(now)
+            _rate_limits[ip][endpoint_group].append(now)
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 @app.route("/")
 def index():
@@ -59,6 +107,7 @@ def add_cards_api(set_id):
     return jsonify({"count": len(cards)}), 201
 
 @app.route("/api/parse", methods=["POST"])
+@rate_limit("parse")
 def parse():
     data = request.get_json()
     text = data.get("text", "")
@@ -91,6 +140,7 @@ def judge():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/parse-image", methods=["POST"])
+@rate_limit("parse-image")
 def parse_img():
     if "image" not in request.files:
         return jsonify({"error": "no image provided"}), 400
