@@ -1,4 +1,4 @@
-const API = "";
+const API = location.pathname.startsWith("/flashcards") ? "/flashcards" : "";
 const S = {
   view: "home", sets: [], set: null, cards: [],
   reviewCards: [], currentIdx: 0, showAnswer: false, userInput: "",
