@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/flashcards/(.*)", "destination": "/api/index" }
+    { "source": "/(.*)", "destination": "/api/index" }
   ],
   "cleanUrls": true
 }
